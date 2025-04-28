@@ -135,19 +135,23 @@ server <- function(input, output, session) {
       theme_minimal()
   })
 
-  # 11) Mapa interactivo de conteo por país
-  output$map <- renderLeaflet({
-    counts <- clima %>% count(Country)
-    world   <- ne_countries(returnclass = "sp")
-    world@data <- left_join(world@data, counts, by = c("admin" = "Country"))
-    pal <- colorNumeric("YlOrRd", domain = world@data$n, na.color = "transparent")
+# Mapa 
+ output$map <- renderLeaflet({
+   country_counts <- clima %>% count(Country)
 
-    leaflet(world) %>%
-      addTiles() %>%
-      addPolygons(fillColor   = ~pal(n),
-                  fillOpacity = 0.7,
-                  color       = "white",
-                  weight      = 0.5,
-                  label       = ~paste0(admin, ": ", ifelse(is.na(n), 0, n)))
-  })
+   world_sf <- ne_countries(scale = "medium", returnclass = "sf")
+   world_sf <- left_join(world_sf, country_counts, by = c("admin" = "Country"))
+
+   pal <- colorNumeric("YlOrRd", domain = world_sf$n, na.color = "transparent")
+
+   leaflet(world_sf) %>%
+     addTiles() %>%
+     addPolygons(
+       fillColor   = ~pal(n),
+       fillOpacity = 0.7,
+       color       = "white",
+       weight      = 0.5,
+       label       = ~paste0(admin, ": ", ifelse(is.na(n), 0, n))
+     )
+ })
 }
