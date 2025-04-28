@@ -1,7 +1,8 @@
 library(shiny)
 library(shinythemes)
 library(leaflet)
-
+#shiny::runApp("C:/Users/gabos/Documents/GitHub/DASHBOARD")
+#
 ui <- fluidPage(
   theme = shinytheme("flatly"),
   tags$head(
