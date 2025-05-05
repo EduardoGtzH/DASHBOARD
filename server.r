@@ -1,140 +1,198 @@
 library(shiny)
 library(DBI)
-library(RMySQL)
+library(RMariaDB)
 library(dplyr)
 library(ggplot2)
+library(plotly)
 library(leaflet)
-library(shinythemes)
-library(rnaturalearth)
 library(sf)
+library(rnaturalearth)
+library(viridis)
 
 server <- function(input, output, session) {
-
-  conn <- dbConnect(RMySQL::MySQL(),
-                    dbname   = "baseclima",
-                    host     = "127.0.0.1",
-                    user     = "root",
-                    password = "root",
-                    port     = 3306)
+  # Conexión a la base de datos
+  conn <- dbConnect(
+    RMariaDB::MariaDB(),
+    dbname = "bd",
+    host = "127.0.0.1",
+    user = "root",
+    password = "root",
+    port = 3306
+  )
+  # Asegurar collation uniforme
+  dbExecute(conn, "SET NAMES 'utf8mb4' COLLATE 'utf8mb4_0900_ai_ci'")
   session$onSessionEnded(function() dbDisconnect(conn))
 
-  clima <- dbGetQuery(conn, "
-    SELECT d.*, f.Date, u.Country, u.Location
-    FROM datos_clima d
-    JOIN fechas f       ON d.ID     = f.ID
-    JOIN ubicaciones u  ON d.ID_ubi = u.ID_ubi
-  ")
-  clima$Date <- as.Date(clima$Date)
-  if (nrow(clima)==0) stop("No hay datos en la DB")
-
-  base_theme <- theme_minimal(base_size=14) +
-    theme(
-      plot.title   = element_text(face="bold", size=16, hjust=0.5),
-      axis.title   = element_text(size=12),
-      plot.margin  = margin(10,10,10,10)
+  # Helper para validar datos
+  validate_data <- function(df) {
+    validate(
+      need(!is.null(df) && nrow(df) > 0, "No hay datos disponibles")
     )
+  }
 
-  output$plotTempCO2 <- renderPlot({
-    ggplot(clima, aes(CO2_Emissions, Temperature)) +
-      geom_point(alpha=0.5) +
-      geom_smooth(method="lm", se=TRUE, color="red") +
-      labs(title="Temperatura vs CO2", x="CO2 (ppm)", y="Temp (°C)") +
-      base_theme
+  # 1. Relación Temperatura vs CO2
+  output$plotTempCO2 <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT Temperature, CO2_Emissions AS CO2, Sea_Level_Rise AS SeaLevel, Humidity
+       FROM datos_clima"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = CO2, y = Temperature, color = SeaLevel, size = Humidity)) +
+      geom_point(alpha = 0.7) +
+      scale_color_viridis_c(name = "Nivel Mar (m)") +
+      labs(title = 'Temperatura vs CO2', x = 'CO2 (ppm)', y = 'Temperatura (°C)') +
+      theme_minimal()
+    ggplotly(p, tooltip = c('x','y','color','size'))
   })
 
-  output$plotTrendTemp <- renderPlot({
-    clima %>%
-      mutate(Year=format(Date,"%Y")) %>%
-      group_by(Year) %>%
-      summarise(Temp=mean(Temperature,na.rm=TRUE)) %>%
-      ggplot(aes(as.integer(Year),Temp)) +
-      geom_line(color="orange", size=1) +
-      labs(title="Tendencia anual de temperatura", x="Año", y="°C") +
-      base_theme
+  # 2. Tendencia de Temperatura por Trimestre
+  output$plotTrendTemp <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT YEAR(f.Date) AS Year, QUARTER(f.Date) AS Quarter,
+              AVG(d.Temperature) AS AvgTemp
+       FROM datos_clima d
+       JOIN fechas f ON d.ID = f.ID
+       GROUP BY Year, Quarter
+       ORDER BY Year, Quarter"
+    )
+    validate_data(df)
+    df <- df %>% mutate(Period = paste0(Year, '-Q', Quarter))
+    p <- ggplot(df, aes(x = Period, y = AvgTemp, group = Year, color = factor(Year))) +
+      geom_line(linewidth = 1) + geom_point() +
+      labs(title = 'Tendencia de Temperatura', x = 'Periodo', y = 'Temp. Promedio (°C)', color = 'Año') +
+      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    ggplotly(p, tooltip = c('x','y'))
   })
 
-  output$plotTrendCO2 <- renderPlot({
-    clima %>%
-      mutate(Year=format(Date,"%Y")) %>%
-      group_by(Year) %>%
-      summarise(CO2=mean(CO2_Emissions,na.rm=TRUE)) %>%
-      ggplot(aes(as.integer(Year),CO2)) +
-      geom_line(color="darkgreen", size=1) +
-      labs(title="Tendencia anual de CO2", x="Año", y="ppm") +
-      base_theme
+  # 3. Tendencia Mensual de CO2
+  output$plotTrendCO2 <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT YEAR(f.Date) AS Year, MONTH(f.Date) AS Month,
+              AVG(d.CO2_Emissions) AS AvgCO2
+       FROM datos_clima d
+       JOIN fechas f ON d.ID = f.ID
+       GROUP BY Year, Month
+       ORDER BY Year, Month"
+    )
+    validate_data(df)
+    df <- df %>% mutate(Period = sprintf('%d-%02d', Year, Month))
+    p <- ggplot(df, aes(x = Period, y = AvgCO2, group = Year, color = factor(Year))) +
+      geom_line(linewidth = 1) + geom_point() +
+      labs(title = 'Tendencia Mensual de CO2', x = 'Periodo', y = 'CO2 Promedio (ppm)', color = 'Año') +
+      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    ggplotly(p, tooltip = c('x','y'))
   })
 
-  output$plotTopTemp <- renderPlot({
-    clima %>%
-      group_by(Country) %>%
-      summarise(Temp=mean(Temperature,na.rm=TRUE)) %>%
-      top_n(10,Temp) %>%
-      ggplot(aes(reorder(Country,Temp),Temp)) +
-      geom_col(fill="firebrick") + coord_flip() +
-      labs(title="Top 10 países por temperatura", x=NULL, y="°C") +
-      base_theme
+  # 4. Top 10 Países por Temperatura Promedio
+  output$plotTopTemp <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT u.Country AS Country, AVG(d.Temperature) AS AvgTemp
+       FROM datos_clima d
+       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi
+       GROUP BY u.Country
+       ORDER BY AvgTemp DESC
+       LIMIT 10"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = reorder(Country, AvgTemp), y = AvgTemp, fill = AvgTemp)) +
+      geom_col() + coord_flip() +
+      labs(title = 'Top 10 Países Temperatura Promedio', x = 'País', y = 'Temp. Promedio (°C)') +
+      scale_fill_viridis_c() + theme_minimal()
+    ggplotly(p, tooltip = c('x','y'))
   })
 
-  output$plotTopCO2 <- renderPlot({
-    clima %>%
-      group_by(Country) %>%
-      summarise(CO2=mean(CO2_Emissions,na.rm=TRUE)) %>%
-      top_n(10,CO2) %>%
-      ggplot(aes(reorder(Country,CO2),CO2)) +
-      geom_col(fill="purple") + coord_flip() +
-      labs(title="Top 10 países por CO2", x=NULL, y="ppm") +
-      base_theme
+  # 5. Top 10 Países por Emisiones Totales de CO2
+  output$plotTopCO2 <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT u.Country AS Country, SUM(d.CO2_Emissions) AS TotalCO2
+       FROM datos_clima d
+       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi
+       GROUP BY u.Country
+       ORDER BY TotalCO2 DESC
+       LIMIT 10"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = reorder(Country, TotalCO2), y = TotalCO2, fill = TotalCO2)) +
+      geom_col() + coord_flip() +
+      labs(title = 'Top 10 Países CO2 Total', x = 'País', y = 'CO2 Total (ppm)') +
+      scale_fill_viridis_c() + theme_minimal()
+    ggplotly(p, tooltip = c('x','y'))
   })
 
-  output$plotSeaLevelRise <- renderPlot({
-    clima %>%
-      mutate(Year=format(Date,"%Y")) %>%
-      group_by(Year) %>%
-      summarise(Sea=mean(Sea_Level_Rise,na.rm=TRUE)) %>%
-      ggplot(aes(as.integer(Year),Sea)) +
-      geom_line(color="steelblue", size=1) +
-      labs(title="Elevación nivel del mar (mm)", x="Año", y="mm") +
-      base_theme
+  # 6. Evolución Nivel del Mar Global
+  output$plotSeaLevelRise <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT YEAR(f.Date) AS Year, AVG(d.Sea_Level_Rise) AS AvgSea
+       FROM datos_clima d
+       JOIN fechas f ON d.ID = f.ID
+       GROUP BY Year
+       ORDER BY Year"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = Year, y = AvgSea)) +
+      geom_area(fill = '#00cec9', alpha = 0.4) + geom_line(color = '#00b894', linewidth = 1) +
+      labs(title = 'Nivel del Mar por Año', x = 'Año', y = 'Nivel Mar (m)') +
+      theme_minimal()
+    ggplotly(p, tooltip = c('x','y'))
   })
 
-  output$plotHumidityPrecip <- renderPlot({
-    ggplot(clima, aes(Humidity, Precipitation)) +
-      geom_point(alpha=0.5, color="darkcyan") +
-      labs(title="Humedad vs Precipitación", x="% Humedad", y="Precipitación") +
-      base_theme
+  # 7. Distribución Humedad y Precipitación por País
+  output$plotHumidityPrecip <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT u.Country AS Country, d.Humidity, d.Precipitation
+       FROM datos_clima d
+       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = Country, y = Humidity)) +
+      geom_boxplot(fill = '#74b9ff', alpha = 0.6) +
+      labs(title = 'Humedad por País', x = 'País', y = 'Humedad (%)') +
+      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    ggplotly(p)
   })
 
-  output$plotWindSpeed <- renderPlot({
-    ggplot(clima, aes(Wind_Speed)) +
-      geom_histogram(bins=15, fill="gold", color="black") +
-      labs(title="Vel. del viento (km/h)", x="km/h", y="Frecuencia") +
-      base_theme
+  # 8. Distribución Velocidad del Viento por País
+  output$plotWindSpeed <- renderPlotly({
+    df <- dbGetQuery(conn,
+      "SELECT u.Country AS Country, d.Wind_Speed AS WindSpeed
+       FROM datos_clima d
+       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi"
+    )
+    validate_data(df)
+    p <- ggplot(df, aes(x = Country, y = WindSpeed)) +
+      geom_violin(fill = '#fd79a8', alpha = 0.6) +
+      labs(title = 'Viento por País', x = 'País', y = 'Velocidad (km/h)') +
+      theme_minimal() + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+    ggplotly(p)
   })
 
-  output$plotRecordsPerLocation <- renderPlot({
-    clima %>%
-      count(Location) %>%
-      top_n(10,n) %>%
-      ggplot(aes(reorder(Location,n),n)) +
-      geom_col(fill="darkgray") + coord_flip() +
-      labs(title="Top 10 ubicaciones por registros", x=NULL, y="Registros") +
-      base_theme
-  })
-
+  # 9. Mapa Interactivo de Temperatura Media por País
   output$map <- renderLeaflet({
-    counts   <- clima %>% count(Country)
-    world_sf <- ne_countries(scale="medium", returnclass="sf")
-    world_sf <- left_join(world_sf, counts, by=c("admin"="Country"))
-    pal      <- colorNumeric("YlOrRd", domain=world_sf$n, na.color="transparent")
-
-    leaflet(world_sf) %>%
+    df <- dbGetQuery(conn,
+      "SELECT u.Country AS Country, AVG(d.Temperature) AS AvgTemp
+       FROM datos_clima d
+       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi
+       GROUP BY u.Country"
+    )
+    world <- ne_countries(scale = "medium", returnclass = "sf")
+    map_data <- left_join(world, df, by = c("name" = "Country"))
+    pal <- colorNumeric('YlOrRd', domain = map_data$AvgTemp, na.color = 'gray')
+    leaflet(map_data) %>%
       addTiles() %>%
       addPolygons(
-        fillColor   = ~pal(n),
-        fillOpacity = 0.7,
-        color       = "white",
-        weight      = 0.5,
-        label       = ~paste0(admin, ": ", ifelse(is.na(n),0,n))
-      )
+        fillColor = ~pal(AvgTemp),
+        weight = 0.5,
+        color = 'white',
+        fillOpacity = 0.8,
+        highlight = highlightOptions(
+          weight = 1.5,
+          color = '#666',
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        ),
+        label = ~paste0(name, ': ', round(AvgTemp,1), '°C')
+      ) %>%
+      addLegend('bottomright', pal = pal, values = ~AvgTemp,
+                title = 'Temp. Media (°C)')
   })
 }
