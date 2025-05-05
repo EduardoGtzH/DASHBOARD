@@ -11,6 +11,7 @@ library(rnaturalearth)
 library(viridis)
 library(lubridate)
 library(RColorBrewer)
+library(rnaturalearthdata)
 
 server <- function(input, output, session) {
 
@@ -214,21 +215,23 @@ server <- function(input, output, session) {
       theme_minimal(base_size=14)
     ggplotly(p)
   })
-
-  # Corrección mapa diferencial años seleccionados
+# Corrección mapa diferencial años seleccionados
 output$map <- renderLeaflet({
-  a1 <- input$map_year[1]
-  a2 <- input$map_year[2]
+  # 1) Años como enteros y variable
+  a1  <- as.integer(input$map_year[1])
+  a2  <- as.integer(input$map_year[2])
   var <- input$map_var
-  
+
+  # 2) Traer diff desde la base (sin comillas en los años)
   sql <- sprintf("
-    SELECT t2.Country, (t2.v2 - t1.v1) AS diff
+    SELECT t2.Country,
+           (t2.v2 - t1.v1) AS diff
     FROM (
       SELECT u.Country, AVG(d.%s) AS v1
       FROM datos_clima d
       JOIN fechas f ON d.ID = f.ID
       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi
-      WHERE YEAR(f.Date) = %s
+      WHERE YEAR(f.Date) = %d
       GROUP BY u.Country
     ) t1
     JOIN (
@@ -236,53 +239,61 @@ output$map <- renderLeaflet({
       FROM datos_clima d
       JOIN fechas f ON d.ID = f.ID
       JOIN ubicaciones u ON d.ID_ubi = u.ID_ubi
-      WHERE YEAR(f.Date) = %s
+      WHERE YEAR(f.Date) = %d
       GROUP BY u.Country
     ) t2 ON t1.Country = t2.Country
   ",
-    var, dbQuoteString(conn, as.character(a1)),
-    var, dbQuoteString(conn, as.character(a2))
+    var, a1,
+    var, a2
   )
-  
+
   df <- dbGetQuery(conn, sql)
-  validate_data(df)
-  
-  world <- ne_countries(scale = "medium", returnclass = "sf")
-  
-  # Join datos con geometrías de países
-  md <- left_join(world, df, by = c("name" = "Country"))
-  
-  # Manejo de valores faltantes (asegúrate que hay valores numéricos)
-  md$diff <- as.numeric(md$diff)
-  mv <- max(abs(md$diff), na.rm = TRUE)
+  validate(need(nrow(df) > 0, "No hay datos para estos filtros"))
 
-  # Paleta colores: rojo positivo (aumentó), azul negativo (disminuyó)
+  # 3) Forzar diff numérico en el dataframe de la consulta
+  df$diff <- as.numeric(df$diff)
+  if (!is.numeric(df$diff)) stop("ERROR: df$diff sigue sin ser numérico")
+
+  # 4) Cargar geometrías de países
+  world <- ne_countries(scale = "medium", returnclass = "sf")
+
+  # 5) Hacer el join y volver a forzar numérico
+  md <- left_join(world, df, by = c("name" = "Country"))
+  md$diff <- as.numeric(md$diff)
+  if (!is.numeric(md$diff)) stop("ERROR: md$diff sigue sin ser numérico")
+
+  # 6) Calcular el rango máximo para la paleta
+  mv <- max(abs(md$diff), na.rm = TRUE)
   pal <- colorNumeric(
-    palette = rev(brewer.pal(11, "RdBu")),
-    domain = c(-mv, mv),
-    na.color = "lightgray"
+    palette   = rev(brewer.pal(11, "RdBu")),
+    domain    = c(-mv, mv),
+    na.color  = "lightgray"
   )
 
-  # Creación del mapa
+  # 7) Crear breaks y labels numéricos para la leyenda
+  brks  <- pretty(c(-mv, mv), n = 7)
+  labs  <- sprintf("%+.2f", brks)
+  cols  <- pal(brks)
+
+  # 8) Renderizar el mapa con leyenda manual
   leaflet(md) %>%
     addTiles() %>%
     addPolygons(
-      fillColor = ~pal(diff),
-      weight = 0.5,
-      color = "white",
+      fillColor   = ~pal(diff),
+      weight      = 0.5,
+      color       = "white",
       fillOpacity = 0.8,
-      highlight = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.9),
-      label = ~sprintf("%s: %+.2f", name, diff)
+      highlight   = highlightOptions(weight = 2, color = "#666", fillOpacity = 0.9),
+      label       = ~sprintf("%s: %+.2f", name, diff)
     ) %>%
     addLegend(
-      "bottomright",
-      pal = pal,
-      values = ~diff,
-      title = sprintf("%s Δ (%d → %d)", var, a1, a2),
-      labFormat = labelFormat(transform = function(x) sprintf("%+.2f", x))
+      position = "bottomright",
+      colors   = cols,
+      labels   = labs,
+      title    = sprintf("%s Δ (%d → %d)", var, a1, a2),
+      opacity  = 0.8
     )
 })
-
 
   # 13) Toggle de tema dinámico
   esquemas <- list(
