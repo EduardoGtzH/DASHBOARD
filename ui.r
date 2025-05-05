@@ -1,3 +1,4 @@
+# ui.R
 library(shiny)
 library(shinythemes)
 library(plotly)
@@ -33,13 +34,14 @@ ui <- fluidPage(
         font-weight: normal;
       }
       .sidebar .small-label {
-        font-size: 0.85em;
+        font-size: 0.75em;
         margin-top: 12px;
-        color: #cccccc;
+        color: #888888;
       }
       .sidebar .tech-list {
         margin: 4px 0 12px 15px;
         line-height: 1.4;
+        font-size: 0.75em;
       }
       .sidebar hr {
         border-color: rgba(255,255,255,0.2);
@@ -61,30 +63,52 @@ ui <- fluidPage(
   div(class = "main-wrapper",
 
     ## SIDEBAR
-div(class = "sidebar",
-  h2("Facultad de Ingeniería"),
-  h3("Bases de datos avanzadas"),
-  h3("Proyecto final"),
+    div(class = "sidebar",
+      h2("Facultad de Ingeniería"),
+      h3("Bases de datos avanzadas"),
+      h3("Proyecto final"),
 
-  div(class = "small-label", style = "color: #888888; font-size: 0.75em;", "Tecnología usada:"),
-  tags$ul(class = "tech-list",
-    tags$li(strong("Datos:"),       " DBI, RMariaDB, dplyr"),
-    tags$li(strong("Backend:"),     " Shiny, DBI"),
-    tags$li(strong("Frontend:"),    " shinythemes, plotly, leaflet"),
-    tags$li(strong("Plantilla:"),   " CSS Grid, Google Font Inter"),
-    tags$li(strong("Arquitectura:")," ui.R & server.R, reactividad"),
-    tags$li(strong("Graficadores:")," ggplot2, viridis, sf, rnaturalearth")
-  ),
-  hr(),
+      div(class = "small-label", "Tecnología usada:"),
+      tags$ul(class = "tech-list",
+        tags$li(strong("Datos:"),       " DBI, RMariaDB, dplyr"),
+        tags$li(strong("Backend:"),     " Shiny, DBI"),
+        tags$li(strong("Frontend:"),    " shinythemes, plotly, leaflet"),
+        tags$li(strong("Plantilla:"),   " CSS Grid, Google Font Inter"),
+        tags$li(strong("Arquitectura:")," ui.R & server.R, reactividad"),
+        tags$li(strong("Graficadores:")," ggplot2, viridis, sf, rnaturalearth")
+      ),
+      hr(),
 
-      selectInput("filter_pais_1",  "Gráf.1: País",   choices = NULL),
-      selectInput("filter_pais_2",  "Gráf.2: País",   choices = NULL),
-      selectInput("filter_pais_3",  "Gráf.3: País",   choices = NULL),
-      selectInput("filter_pais_78", "Gráf.7-8: País", choices = NULL),
-      sliderInput("map_year",       "Mapa: Año",      min = 1900, max = 2100, value = 2000, sep = ""),
-      radioButtons("map_var",       "Variable mapa:",
-                   choices  = c("Temperatura" = "Temperature", "CO₂" = "CO2_Emissions"),
-                   selected = "Temperature"),
+      # 1. Temp vs CO₂
+      selectInput("filter_pais_1",    "Temperatura vs CO₂: País",        choices = NULL),
+      # 2. Tendencia Temp trimestral
+      selectInput("filter_pais_2",    "Tendencia Temp Trimestral: País", choices = NULL),
+      # 3. Tendencia CO₂ mensual
+      selectInput("filter_pais_3",    "Tendencia CO₂ Mensual: País",     choices = NULL),
+      # 4. Elevación nivel del mar (no selector)
+
+      # 5. Humedad/Viento mensual
+      selectInput("filter_pais_78",   "Humedad/Viento: País",            choices = NULL),
+
+      # 7. Top 10 Temp prom
+      selectInput("top_temp_year",    "Top 10 Temp: Año",                choices = NULL),
+      # 8. Top 10 CO₂ prom
+      selectInput("top_co2_year",     "Top 10 CO₂: Año",                 choices = NULL),
+      hr(),
+
+      # mapa
+      sliderInput("map_year",         "Mapa: Años",                      min = 1900, max = 2100, value = c(1900, 2100), sep = ""),
+      selectInput("map_var",          "Variable mapa:",
+                   choices = c(
+                     "Temperatura"     = "Temperature",
+                     "CO₂"              = "CO2_Emissions",
+                     "Nivel del mar"    = "Sea_Level_Rise",
+                     "Humedad"          = "Humidity",
+                     "Precipitación"    = "Precipitation",
+                     "Velocidad viento" = "Wind_Speed"
+                   ),
+                   selected = "Temperature"
+      ),
       actionButton("btn_bg", "Cambiar color", icon = icon("adjust"), width = "100%")
     ),
 
@@ -93,23 +117,23 @@ div(class = "sidebar",
       h1("Dashboard Cambio Climático", style = "margin-bottom: 15px;"),
 
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot1", height = "300px"))),
-        column(6, div(class = "plot-card", plotlyOutput("plot2", height = "300px")))
+        column(6, div(class = "plot-card", plotlyOutput("plot1", height = "300px"))),  # 1
+        column(6, div(class = "plot-card", plotlyOutput("plot2", height = "300px")))   # 2
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot3", height = "300px"))),
-        column(6, div(class = "plot-card", plotlyOutput("plot4", height = "300px")))
+        column(6, div(class = "plot-card", plotlyOutput("plot3", height = "300px"))),  # 3
+        column(6, div(class = "plot-card", plotlyOutput("plot6", height = "300px")))   # 6
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot5", height = "300px"))),
-        column(6, div(class = "plot-card", plotlyOutput("plot6", height = "300px")))
+        column(6, div(class = "plot-card", plotlyOutput("plot7", height = "300px"))),  # 7
+        column(6, div(class = "plot-card", plotlyOutput("plot8", height = "300px")))   # 8
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot7", height = "300px"))),
-        column(6, div(class = "plot-card", plotlyOutput("plot8", height = "300px")))
+        column(6, div(class = "plot-card", plotlyOutput("plot4", height = "300px"))),  # 4
+        column(6, div(class = "plot-card", plotlyOutput("plot5", height = "300px")))   # 5
       ),
       div(class = "plot-card",
-          leafletOutput("map", height = "500px")
+          leafletOutput("map", height = "500px")                                          # mapa
       )
     )
   )
