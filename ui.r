@@ -23,39 +23,14 @@ ui <- fluidPage(
         gap: 15px;
         font-family: 'Inter', sans-serif;
       }
-      .sidebar h2 {
-        margin: 0;
-        font-weight: bold;
-        font-size: 1.3em;
-      }
-      .sidebar h3 {
-        margin: 4px 0;
-        font-size: 1.1em;
-        font-weight: normal;
-      }
-      .sidebar .small-label {
-        font-size: 0.75em;
-        margin-top: 12px;
-        color: #888888;
-      }
-      .sidebar .tech-list {
-        margin: 4px 0 12px 15px;
-        line-height: 1.4;
-        font-size: 0.75em;
-      }
-      .sidebar hr {
-        border-color: rgba(255,255,255,0.2);
-      }
-      .main-content {
-        padding: 20px;
-        overflow-y: auto;
-      }
-      .plot-card {
-        margin-bottom: 20px;
-      }
-      @media (max-width: 768px) {
-        .main-wrapper { grid-template-columns: 1fr; }
-      }
+      .sidebar h2 { margin: 0; font-weight: bold; font-size: 1.3em; }
+      .sidebar h3 { margin: 4px 0; font-size: 1.1em; font-weight: normal; }
+      .sidebar .small-label { font-size: 0.75em; margin-top: 12px; color: #888888; }
+      .sidebar .tech-list { margin: 4px 0 12px 15px; line-height: 1.4; font-size: 0.75em; }
+      .sidebar hr { border-color: rgba(255,255,255,0.2); }
+      .main-content { padding: 20px; overflow-y: auto; }
+      .plot-card { margin-bottom: 20px; }
+      @media (max-width: 768px) { .main-wrapper { grid-template-columns: 1fr; } }
     ")),
     uiOutput("dynamicCSS")
   ),
@@ -79,24 +54,15 @@ ui <- fluidPage(
       ),
       hr(),
 
-      # 1. Temp vs CO₂
       selectInput("filter_pais_1",    "Temperatura vs CO₂: País",        choices = NULL),
-      # 2. Tendencia Temp trimestral
       selectInput("filter_pais_2",    "Tendencia Temp Trimestral: País", choices = NULL),
-      # 3. Tendencia CO₂ mensual
       selectInput("filter_pais_3",    "Tendencia CO₂ Mensual: País",     choices = NULL),
-      # 4. Elevación nivel del mar (no selector)
-
-      # 5. Humedad/Viento mensual
       selectInput("filter_pais_78",   "Humedad/Viento: País",            choices = NULL),
 
-      # 7. Top 10 Temp prom
       selectInput("top_temp_year",    "Top 10 Temp: Año",                choices = NULL),
-      # 8. Top 10 CO₂ prom
       selectInput("top_co2_year",     "Top 10 CO₂: Año",                 choices = NULL),
       hr(),
 
-      # mapa
       sliderInput("map_year",         "Mapa: Años",                      min = 1900, max = 2100, value = c(1900, 2100), sep = ""),
       selectInput("map_var",          "Variable mapa:",
                    choices = c(
@@ -109,7 +75,17 @@ ui <- fluidPage(
                    ),
                    selected = "Temperature"
       ),
-      actionButton("btn_bg", "Cambiar color", icon = icon("adjust"), width = "100%")
+      actionButton("btn_bg", "Cambiar color", icon = icon("adjust"), width = "100%"),
+      hr(),
+
+      numericInput(
+        "pred_year",
+        "Año a predecir:",
+        value = NA,    # se actualizará en server
+        min   = NA,
+        max   = NA,
+        step  = 1
+      )
     ),
 
     ## MAIN CONTENT
@@ -117,23 +93,27 @@ ui <- fluidPage(
       h1("Dashboard Cambio Climático", style = "margin-bottom: 15px;"),
 
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot1", height = "300px"))),  # 1
-        column(6, div(class = "plot-card", plotlyOutput("plot2", height = "300px")))   # 2
+        column(6, div(class = "plot-card", plotlyOutput("plot1", height = "300px"))),
+        column(6, div(class = "plot-card", plotlyOutput("plot2", height = "300px")))
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot3", height = "300px"))),  # 3
-        column(6, div(class = "plot-card", plotlyOutput("plot6", height = "300px")))   # 6
+        column(6, div(class = "plot-card", plotlyOutput("plot3", height = "300px"))),
+        column(6, div(class = "plot-card", plotlyOutput("plot6", height = "300px")))
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot7", height = "300px"))),  # 7
-        column(6, div(class = "plot-card", plotlyOutput("plot8", height = "300px")))   # 8
+        column(6, div(class = "plot-card", plotlyOutput("plot7", height = "300px"))),
+        column(6, div(class = "plot-card", plotlyOutput("plot8", height = "300px")))
       ),
       fluidRow(
-        column(6, div(class = "plot-card", plotlyOutput("plot4", height = "300px"))),  # 4
-        column(6, div(class = "plot-card", plotlyOutput("plot5", height = "300px")))   # 5
+        column(6, div(class = "plot-card", plotlyOutput("plot4", height = "300px"))),
+        column(6, div(class = "plot-card", plotlyOutput("plot5", height = "300px")))
       ),
-      div(class = "plot-card",
-          leafletOutput("map", height = "500px")                                          # mapa
+
+      div(class = "plot-card", leafletOutput("map", height = "500px")),
+
+      div(class = "plot-card", plotlyOutput("plot_pred", height = "300px")),
+      div(style = "margin-bottom:20px;",
+          strong("Temperatura predicha:"), textOutput("pred_text")
       )
     )
   )
